@@ -26,12 +26,23 @@ The golden rule: **secret-bearing API keys stay on the server side.** The dev/pr
 
 These are designed to be used directly in the browser (like a Mapbox public token). They are injected into the client bundle via Vite's `define`, so they **will** be visible in browser devtools. Scope and restrict them rather than trying to hide them:
 
-1. **Google Maps API key** — loads Photorealistic 3D Tiles directly and powers GEV place search. **Restrict it** (HTTP referrer + API restriction to the required Google APIs) in the Google Cloud Console. An unrestricted key in a public deployment can be abused and billed to you.
+1. **Google Maps API key** — loads Photorealistic 3D Tiles directly and powers GEV place search. **Restrict its API scope** in the Google Cloud Console to the APIs the browser actually calls. An unrestricted key in a public deployment can be abused and billed to you.
+
+   > **The browser key cannot carry an HTTP referrer restriction as shipped.** Photorealistic 3D Tiles are fetched client-side and would honour one, but place search calls the **Geocoding web service** endpoint (`maps.googleapis.com/maps/api/geocode/json`) directly from the browser, and Google rejects referrer-restricted keys on every web service endpoint:
+   >
+   > ```json
+   > { "status": "REQUEST_DENIED",
+   >   "error_message": "API keys with referer restrictions cannot be used with this API." }
+   > ```
+   >
+   > Referrer restrictions apply to the Maps JavaScript API and client SDKs, not to web services — so restricting this key by referrer follows this document's advice and silently breaks search. Until geocoding moves behind a server proxy (the fix in #363), scope the browser key by **API restriction only** and lean on provider-side quotas and budget alerts ([below](#network-exposure--the-operator-threat-model)) for the geocoding spend an unrestricted-by-referrer key carries.
 2. **Cesium ion token** (`CESIUM_ION_TOKEN`, optional — for ion-hosted Google Photorealistic 3D Tiles, Bing world imagery, and world terrain) — used as `Cesium.Ion.defaultAccessToken` client-side. Use a public **`assets:read`** token with **URL restrictions** for any hosted deployment. The Community plan has eligibility and usage limits; a public token is not a secret, but it can still consume the account's quota.
 
 > The explicit browser `define` block in `build/vite.js` controls exactly what reaches the client: only these two keys. Everything else stays server-side.
 
-**Places and Street View never needed to be on that list** (#33): they're called from the server-side proxies in the table above, which use `GOOGLE_MAPS_SERVER_API_KEY` when it's set. Splitting it from the browser-exposed key lets each key's Google Cloud restriction actually match what it does — the browser key referrer-restricted to the APIs the client loads, the server key IP-restricted (never a referrer, since it never leaves your server) to Places + Street View Static — instead of one key that has to be either over-permissioned or broken for one of its two jobs. A single shared `GOOGLE_MAPS_API_KEY` still works if you don't split them; it just has to cover every API both sides use.
+**Places and Street View never needed to be on that list** (#33): they're called from the server-side proxies in the table above, which use `GOOGLE_MAPS_SERVER_API_KEY` when it's set. Splitting it from the browser-exposed key lets each key's Google Cloud restriction actually match what it does — the browser key API-restricted to the APIs the client loads, the server key IP-restricted (never a referrer, since it never leaves your server) to Places + Street View Static — instead of one key that has to be either over-permissioned or broken for one of its two jobs. A single shared `GOOGLE_MAPS_API_KEY` still works if you don't split them; it just has to cover every API both sides use.
+
+When you IP-restrict `GOOGLE_MAPS_SERVER_API_KEY`, **list both the IPv4 and the IPv6 address of a dual-stack host**. Google matches the address the request actually egressed from, so an IPv4-only restriction on an IPv6-egressing host fails with `API_KEY_IP_ADDRESS_BLOCKED` — which reads like a broken key rather than a missing second entry.
 
 Never commit real keys. `.env` is gitignored; only `.env.example` (placeholder names) is tracked. On macOS `dev-fresh.sh` can read keys from the Keychain; plain Vite uses env vars or a local `.env`, and Pinokio uses its ignored app `ENVIRONMENT` file.
 
