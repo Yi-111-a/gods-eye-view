@@ -28,14 +28,20 @@ These are designed to be used directly in the browser (like a Mapbox public toke
 
 1. **Google Maps API key** — loads Photorealistic 3D Tiles directly and powers GEV place search. **Restrict its API scope** in the Google Cloud Console to the APIs the browser actually calls. An unrestricted key in a public deployment can be abused and billed to you.
 
-   > **The browser key cannot carry an HTTP referrer restriction as shipped.** Photorealistic 3D Tiles are fetched client-side and would honour one, but place search calls the **Geocoding web service** endpoint (`maps.googleapis.com/maps/api/geocode/json`) directly from the browser, and Google rejects referrer-restricted keys on every web service endpoint:
+   > **The referrer restriction below cannot be applied to this key as shipped — and API scope alone is a workaround, not a fix.** Place search calls the **Geocoding web service** endpoint (`maps.googleapis.com/maps/api/geocode/json`) directly from the browser, and Google rejects referrer-restricted keys on every web service endpoint:
    >
    > ```json
    > { "status": "REQUEST_DENIED",
    >   "error_message": "API keys with referer restrictions cannot be used with this API." }
    > ```
    >
-   > Referrer restrictions apply to the Maps JavaScript API and client SDKs, not to web services — so restricting this key by referrer follows this document's advice and silently breaks search. Until geocoding moves behind a server proxy (the fix in #363), scope the browser key by **API restriction only** and lean on provider-side quotas and budget alerts ([below](#network-exposure--the-operator-threat-model)) for the geocoding spend an unrestricted-by-referrer key carries.
+   > Google also does not expect web-service keys to be publicly exposed at all, and recommends a proxy for browser clients that need geocoding ([API security best practices](https://developers.google.com/maps/api-security-best-practices#protect_web_service_api_keys)). So while geocoding is still called from the browser, the browser key is stuck between two restrictions and can only get the weaker one:
+   >
+   > - **API restriction is a cap on the bill, not a lock on the key.** It limits *which Google API* the key can call; it does not restrict *who* can call it. Anyone who loads the page can copy it and use it against the Geocoding API you enabled. Scope it to Map Tiles + Geocoding so a lifted key cannot reach anything wider, but do not read the restriction as protecting the key.
+   > - **Quotas and budget alerts bound damage, they do not restrict access.** They cap what the key can cost you ([below](#network-exposure--the-operator-threat-model)); they do not decide who may spend it. Keep them set, and treat them as a blast-radius limit rather than a security control.
+   > - **Hosted deployments should not stay in this state.** Prefer the server-side geocoding proxy (#693) or the client-side Maps JavaScript API geocoding surface. Once no browser code calls a web service with this key, referrer-restrict it as this document originally said and drop this whole note.
+   >
+   > Tracking issue for the real fix: #363. The server-side geocoding change is in #693; until one of those lands, treat the browser key as **temporarily exposed by necessity**, not as a configuration you can secure.
 2. **Cesium ion token** (`CESIUM_ION_TOKEN`, optional — for ion-hosted Google Photorealistic 3D Tiles, Bing world imagery, and world terrain) — used as `Cesium.Ion.defaultAccessToken` client-side. Use a public **`assets:read`** token with **URL restrictions** for any hosted deployment. The Community plan has eligibility and usage limits; a public token is not a secret, but it can still consume the account's quota.
 
 > The explicit browser `define` block in `build/vite.js` controls exactly what reaches the client: only these two keys. Everything else stays server-side.

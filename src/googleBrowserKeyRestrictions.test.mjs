@@ -34,9 +34,9 @@ const GEOCODE_WEB_SERVICE = /maps\.googleapis\.com\/maps\/api\/geocode\/json/;
  *
  * Keyed on the literal "HTTP referrer" phrase the original guidance used, and
  * exempting negated sentences — the correction itself has to name the thing it
- * corrects ("the browser key cannot carry an HTTP referrer restriction", "Do
- * NOT add an HTTP referrer restriction"), so a bare search for the phrase would
- * forbid the fix as well as the bug.
+ * corrects ("once no browser code calls a web service with this key,
+ * referrer-restrict it as this document originally said"), so a bare search for
+ * the phrase would forbid the fix as well as the bug.
  */
 function instructsReferrerRestriction(text) {
   const sentences = text.replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/);
@@ -85,13 +85,49 @@ test('SECURITY.md does not tell operators to referrer-restrict the browser key',
   // preference and the next edit re-adds "HTTP referrer".
   assert.match(
     security,
-    /cannot carry an HTTP referrer restriction/i,
-    'SECURITY.md must state the browser key cannot carry a referrer restriction',
+    /cannot be applied to this key as shipped/i,
+    'SECURITY.md must state the referrer restriction cannot be applied as shipped',
   );
   assert.match(
     security,
     /API keys with referer restrictions cannot be used with this API/,
     'SECURITY.md must quote the verbatim Google error so it is recognisable in the console',
+  );
+});
+
+// Review feedback on #868: dropping the referrer advice is only correct if the
+// replacement does not read as though API scoping fixes the security problem.
+// Google's guidance says web-service keys are not expected to be publicly
+// exposed, so the document has to say plainly what the weaker restriction
+// leaves behind. Without these the next edit can quietly turn the workaround
+// back into a recommendation.
+test('SECURITY.md is explicit that API scoping alone is not a safe configuration', () => {
+  const security = read('SECURITY.md');
+
+  assert.match(
+    security,
+    /workaround, not a fix/i,
+    'SECURITY.md must frame API-only scoping as a temporary workaround',
+  );
+  assert.match(
+    security,
+    /copy it and use it against the Geocoding API/i,
+    'SECURITY.md must say the exposed key can be lifted and spent by anyone who loads the page',
+  );
+  assert.match(
+    security,
+    /quotas and budget alerts bound damage, they do not restrict access/i,
+    'SECURITY.md must say quotas cap spend rather than restricting who may call the API',
+  );
+  assert.match(
+    security,
+    /prefer the server-side geocoding proxy \(#693\)|client-side Maps JavaScript API geocoding surface/i,
+    'SECURITY.md must point hosted deployments at the server proxy or Maps JS geocoding (#693)',
+  );
+  assert.match(
+    security,
+    /#693/,
+    'SECURITY.md must reference #693, the change that makes a referrer restriction possible again',
   );
 });
 
@@ -109,10 +145,29 @@ test('.env.example does not tell operators to referrer-restrict the browser key'
     .slice(0, example.indexOf('\nGOOGLE_MAPS_API_KEY='))
     .replace(/^#\s?/gm, '')
     .replace(/\s+/g, ' ');
+
+  // Same three points as SECURITY.md: this is temporary, the key is liftable,
+  // and quota alerts are a cap rather than a restriction. The entry is the one
+  // place an operator is guaranteed to read while configuring the key.
   assert.match(
     googleKeyEntry,
-    /Do NOT add an HTTP referrer restriction/i,
-    'the GOOGLE_MAPS_API_KEY entry must carry the referrer-restriction warning',
+    /TEMPORARY WORKAROUND, not a secure configuration/i,
+    'the GOOGLE_MAPS_API_KEY entry must label the state a temporary workaround',
+  );
+  assert.match(
+    googleKeyEntry,
+    /copy the key and use it against\s+the Geocoding API/i,
+    'the GOOGLE_MAPS_API_KEY entry must warn the key can be copied and spent',
+  );
+  assert.match(
+    googleKeyEntry,
+    /only cap the damage — they do not\s+restrict who can spend it/i,
+    'the GOOGLE_MAPS_API_KEY entry must say quotas cap damage, not restrict access',
+  );
+  assert.match(
+    googleKeyEntry,
+    /prefer the server-side\s+geocoding proxy \(#693\)/i,
+    'the GOOGLE_MAPS_API_KEY entry must point hosted deployments at #693',
   );
 });
 
